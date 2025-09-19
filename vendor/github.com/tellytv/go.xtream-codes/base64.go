@@ -6,6 +6,7 @@ package xtreamcodes
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"reflect"
 )
@@ -42,17 +43,33 @@ func (bv *Base64Value) String() string {
 
 // UnmarshalJSON sets bv to the bytes represented in the base64url encoding b.
 func (bv *Base64Value) UnmarshalJSON(b []byte) error {
-	if len(b) < 2 || b[0] != byte('"') || b[len(b)-1] != byte('"') {
+	var encoded string
+	if err := json.Unmarshal(b, &encoded); err != nil {
 		return errors.New("value is not a string")
 	}
 
-	out := make([]byte, base64.RawURLEncoding.DecodedLen(len(b)-2))
-	n, err := base64.RawURLEncoding.Decode(out, b[1:len(b)-1])
-	if err != nil {
-		return err
+	encodings := []*base64.Encoding{
+		base64.RawURLEncoding,
+		base64.URLEncoding,
+		base64.StdEncoding.WithPadding(base64.NoPadding),
+		base64.StdEncoding,
+	}
+
+	var (
+		out []byte
+		err error
+	)
+
+	for _, encoding := range encodings {
+		out, err = encoding.DecodeString(encoded)
+		if err == nil {
+			v := reflect.ValueOf(bv).Elem()
+			v.SetBytes(out)
+			return nil
+		}
 	}
 
 	v := reflect.ValueOf(bv).Elem()
-	v.SetBytes(out[:n])
+	v.SetBytes([]byte(encoded))
 	return nil
 }
