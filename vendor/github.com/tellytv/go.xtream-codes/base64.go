@@ -1,16 +1,17 @@
 package xtreamcodes
 
 // Package base64 provides a byte slice type that marshals into json as
-// a raw (no padding) base64url value.
+// a base64 value. It accepts both standard and URL-safe encodings.
 // Originally from https://github.com/manifoldco/go-base64
 
 import (
 	"encoding/base64"
 	"errors"
 	"reflect"
+	"strings"
 )
 
-// Base64Value is a base64url encoded json object,
+// Base64Value is a base64 encoded json object,
 type Base64Value []byte
 
 // New returns a pointer to a Base64Value, cast from the given byte slice.
@@ -23,7 +24,7 @@ func New(b []byte) *Base64Value {
 
 // NewFromString returns a Base64Value containing the decoded data in encoded.
 func NewFromString(encoded string) (*Base64Value, error) {
-	out, err := base64.RawURLEncoding.DecodeString(encoded)
+	out, err := decodeBase64String(encoded)
 	if err != nil {
 		return nil, err
 	}
@@ -31,28 +32,56 @@ func NewFromString(encoded string) (*Base64Value, error) {
 	return New(out), nil
 }
 
-// MarshalJSON returns the ba64url encoding of bv for JSON representation.
+// MarshalJSON returns the base64 encoding of bv for JSON representation.
 func (bv *Base64Value) MarshalJSON() ([]byte, error) {
-	return []byte("\"" + base64.RawURLEncoding.EncodeToString(*bv) + "\""), nil
+	return []byte("\"" + base64.StdEncoding.EncodeToString(*bv) + "\""), nil
 }
 
 func (bv *Base64Value) String() string {
 	return base64.RawURLEncoding.EncodeToString(*bv)
 }
 
-// UnmarshalJSON sets bv to the bytes represented in the base64url encoding b.
+// UnmarshalJSON sets bv to the bytes represented in the base64 encoding b.
 func (bv *Base64Value) UnmarshalJSON(b []byte) error {
 	if len(b) < 2 || b[0] != byte('"') || b[len(b)-1] != byte('"') {
 		return errors.New("value is not a string")
 	}
 
-	out := make([]byte, base64.RawURLEncoding.DecodedLen(len(b)-2))
-	n, err := base64.RawURLEncoding.Decode(out, b[1:len(b)-1])
+	out, err := decodeBase64String(string(b[1 : len(b)-1]))
 	if err != nil {
 		return err
 	}
 
 	v := reflect.ValueOf(bv).Elem()
-	v.SetBytes(out[:n])
+	v.SetBytes(out)
 	return nil
+}
+
+func decodeBase64String(encoded string) ([]byte, error) {
+	decodeWithPadding := func(enc *base64.Encoding, value string) ([]byte, error) {
+		if m := len(value) % 4; m != 0 {
+			value += strings.Repeat("=", 4-m)
+		}
+		return enc.DecodeString(value)
+	}
+
+	if out, err := decodeWithPadding(base64.StdEncoding, encoded); err == nil {
+		return out, nil
+	}
+
+	if out, err := base64.RawStdEncoding.DecodeString(encoded); err == nil {
+		return out, nil
+	}
+
+	if out, err := decodeWithPadding(base64.URLEncoding, encoded); err == nil {
+		return out, nil
+	}
+
+	trimmed := strings.TrimRight(encoded, "=")
+	out, err := base64.RawURLEncoding.DecodeString(trimmed)
+	if err == nil {
+		return out, nil
+	}
+
+	return nil, err
 }
