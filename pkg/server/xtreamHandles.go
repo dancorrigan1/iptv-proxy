@@ -283,6 +283,21 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 
 // ProcessResponse processes various types of xtream-codes responses
 func ProcessResponse(resp interface{}) interface{} {
+	switch r := resp.(type) {
+	case nil:
+		return r
+	case []xtream.EPGInfo:
+		return processEPGInfos(r)
+	case []*xtream.EPGInfo:
+		return processEPGInfoPointers(r)
+	case xtream.EPGInfo:
+		return processEPGInfo(r)
+	case *xtream.EPGInfo:
+		if r == nil {
+			return nil
+		}
+		return processEPGInfo(*r)
+	}
 
 	respType := reflect.TypeOf(resp)
 
@@ -296,6 +311,68 @@ func ProcessResponse(resp interface{}) interface{} {
 	default:
 	}
 	return resp
+}
+
+type epgInfoResponse struct {
+	ChannelID      string                    `json:"channel_id"`
+	Description    string                    `json:"description"`
+	End            string                    `json:"end"`
+	EPGID          xtream.FlexInt            `json:"epg_id"`
+	HasArchive     xtream.ConvertibleBoolean `json:"has_archive"`
+	ID             xtream.FlexInt            `json:"id"`
+	Lang           string                    `json:"lang"`
+	NowPlaying     xtream.ConvertibleBoolean `json:"now_playing"`
+	Start          string                    `json:"start"`
+	StartTimestamp xtream.Timestamp          `json:"start_timestamp"`
+	StopTimestamp  xtream.Timestamp          `json:"stop_timestamp"`
+	Title          string                    `json:"title"`
+}
+
+func processEPGInfos(epgs []xtream.EPGInfo) []epgInfoResponse {
+	result := make([]epgInfoResponse, 0, len(epgs))
+	for _, epg := range epgs {
+		result = append(result, newEPGInfoResponse(epg))
+	}
+	return result
+}
+
+func processEPGInfoPointers(epgs []*xtream.EPGInfo) []epgInfoResponse {
+	result := make([]epgInfoResponse, 0, len(epgs))
+	for _, epg := range epgs {
+		if epg == nil {
+			continue
+		}
+		result = append(result, newEPGInfoResponse(*epg))
+	}
+	return result
+}
+
+func processEPGInfo(epg xtream.EPGInfo) epgInfoResponse {
+	return newEPGInfoResponse(epg)
+}
+
+func newEPGInfoResponse(epg xtream.EPGInfo) epgInfoResponse {
+	return epgInfoResponse{
+		ChannelID:      epg.ChannelID,
+		Description:    decodeBase64Value(epg.Description),
+		End:            epg.End,
+		EPGID:          epg.EPGID,
+		HasArchive:     epg.HasArchive,
+		ID:             epg.ID,
+		Lang:           epg.Lang,
+		NowPlaying:     epg.NowPlaying,
+		Start:          epg.Start,
+		StartTimestamp: epg.StartTimestamp,
+		StopTimestamp:  epg.StopTimestamp,
+		Title:          decodeBase64Value(epg.Title),
+	}
+}
+
+func decodeBase64Value(value xtream.Base64Value) string {
+	if len(value) == 0 {
+		return ""
+	}
+	return string(value)
 }
 
 func processXtreamArray(arr interface{}) interface{} {
