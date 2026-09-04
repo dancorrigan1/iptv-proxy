@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -109,8 +110,12 @@ func (c *Config) xtreamGenerateM3u(ctx *gin.Context, extension string) (*m3u.Pla
 			track := m3u.Track{Name: stream.Name, Length: -1, URI: "", Tags: nil}
 
 			//TODO: Add more tag if needed.
-			if stream.EPGChannelID != "" {
-				track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-id", Value: stream.EPGChannelID})
+			epgChannelID := stream.EPGChannelID
+			if c.EPGIDMode == config.EPGIDModeStreamID {
+				epgChannelID = fmt.Sprint(stream.ID)
+			}
+			if epgChannelID != "" {
+				track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-id", Value: epgChannelID})
 			}
 			if stream.Name != "" {
 				track.Tags = append(track.Tags, m3u.Tag{Name: "tvg-name", Value: stream.Name})
@@ -272,6 +277,9 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 	log.Printf("[iptv-proxy] %v | %s |Action\t%s\n", time.Now().Format("2006/01/02 - 15:04:05"), ctx.ClientIP(), action)
 
 	processedResp := ProcessResponse(resp)
+	if action == "get_live_streams" && c.EPGIDMode == config.EPGIDModeStreamID {
+		processedResp = rewriteLiveStreamEPGIDs(processedResp)
+	}
 
 	if config.CacheFolder != "" {
 		readableJSON, _ := json.Marshal(processedResp)
@@ -279,6 +287,78 @@ func (c *Config) xtreamPlayerAPI(ctx *gin.Context, q url.Values) {
 	}
 
 	ctx.JSON(http.StatusOK, processedResp)
+}
+
+// rewriteLiveStreamEPGIDs makes stream_id the client-facing epg_channel_id.
+// Providers sometimes publish XMLTV channel IDs as stream IDs while returning
+// unrelated guide slugs from get_live_streams. The response may be typed when
+// legacy parsing is enabled or map-based when advanced parsing preserves the
+// provider's raw JSON, so both representations must be handled.
+func rewriteLiveStreamEPGIDs(resp interface{}) interface{} {
+	switch streams := resp.(type) {
+	case []xtream.Stream:
+		out := make([]xtream.Stream, len(streams))
+		copy(out, streams)
+		for i := range out {
+			out[i].EPGChannelID = fmt.Sprint(out[i].ID)
+		}
+		return out
+	case []*xtream.Stream:
+		out := make([]*xtream.Stream, len(streams))
+		for i, stream := range streams {
+			if stream == nil {
+				continue
+			}
+			copyOfStream := *stream
+			copyOfStream.EPGChannelID = fmt.Sprint(copyOfStream.ID)
+			out[i] = &copyOfStream
+		}
+		return out
+	case []map[string]interface{}:
+		for _, stream := range streams {
+			rewriteLiveStreamMapEPGID(stream)
+		}
+		return streams
+	case []interface{}:
+		for _, item := range streams {
+			if stream, ok := item.(map[string]interface{}); ok {
+				rewriteLiveStreamMapEPGID(stream)
+			}
+		}
+		return streams
+	default:
+		return resp
+	}
+}
+
+func rewriteLiveStreamMapEPGID(stream map[string]interface{}) {
+	streamID, ok := jsonScalarString(stream["stream_id"])
+	if !ok || streamID == "" {
+		return
+	}
+	stream["epg_channel_id"] = streamID
+}
+
+func jsonScalarString(value interface{}) (string, bool) {
+	switch v := value.(type) {
+	case string:
+		return v, true
+	case json.Number:
+		return v.String(), true
+	case float64:
+		return fmt.Sprintf("%.0f", v), !math.IsNaN(v) && !math.IsInf(v, 0) && math.Trunc(v) == v
+	case float32:
+		asFloat64 := float64(v)
+		return fmt.Sprintf("%.0f", v), !math.IsNaN(asFloat64) && !math.IsInf(asFloat64, 0) && math.Trunc(asFloat64) == asFloat64
+	case int:
+		return fmt.Sprint(v), true
+	case int64:
+		return fmt.Sprint(v), true
+	case uint64:
+		return fmt.Sprint(v), true
+	default:
+		return "", false
+	}
 }
 
 // ProcessResponse processes various types of xtream-codes responses

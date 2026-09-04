@@ -22,6 +22,13 @@ import (
 	"net/url"
 )
 
+const (
+	// EPGIDModeProvider preserves the provider's epg_channel_id value.
+	EPGIDModeProvider = "provider"
+	// EPGIDModeStreamID advertises stream_id as epg_channel_id.
+	EPGIDModeStreamID = "stream_id"
+)
+
 // Add Debugging Logging option
 var DebugLoggingEnabled bool
 
@@ -54,6 +61,7 @@ type ProxyConfig struct {
 	XtreamPassword       CredentialString
 	XtreamBaseURL        string
 	XtreamGenerateApiGet bool
+	EPGIDMode            string
 	M3UCacheExpiration   int
 	M3UFileName          string
 	CustomEndpoint       string

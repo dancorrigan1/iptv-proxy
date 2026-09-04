@@ -75,6 +75,11 @@ http://proxyserver.com:8080/14/test/3?username=test&password=passwordtest
 http://proxyserver.com:8080/15/test/4?username=test&password=passwordtest
 ```
 
+If a provider's XMLTV `<channel id>` values are its numeric stream IDs rather
+than the `epg_channel_id` values returned by `get_live_streams`, start the
+Xtream proxy with `--epg-id-mode stream_id`. The default mode, `provider`,
+passes the provider's EPG IDs through unchanged.
+
 ### M3u8 Example
 
 The m3u8 feature is like m3u.
@@ -270,4 +275,3 @@ and auth with token...
 Grab me a beer 🍻
 
 [![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif)](https://www.paypal.com/donate?hosted_button_id=WQAAMQWJPKHUN)
-
