@@ -6,6 +6,7 @@ package xtreamcodes
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"reflect"
 )
@@ -23,7 +24,7 @@ func New(b []byte) *Base64Value {
 
 // NewFromString returns a Base64Value containing the decoded data in encoded.
 func NewFromString(encoded string) (*Base64Value, error) {
-	out, err := base64.RawURLEncoding.DecodeString(encoded)
+	out, err := decodeBase64Value(encoded)
 	if err != nil {
 		return nil, err
 	}
@@ -46,13 +47,37 @@ func (bv *Base64Value) UnmarshalJSON(b []byte) error {
 		return errors.New("value is not a string")
 	}
 
-	out := make([]byte, base64.RawURLEncoding.DecodedLen(len(b)-2))
-	n, err := base64.RawURLEncoding.Decode(out, b[1:len(b)-1])
+	var encoded string
+	if err := json.Unmarshal(b, &encoded); err != nil {
+		return err
+	}
+
+	out, err := decodeBase64Value(encoded)
 	if err != nil {
 		return err
 	}
 
 	v := reflect.ValueOf(bv).Elem()
-	v.SetBytes(out[:n])
+	v.SetBytes(out)
 	return nil
+}
+
+func decodeBase64Value(encoded string) ([]byte, error) {
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	}
+
+	var lastErr error
+	for _, encoding := range encodings {
+		out, err := encoding.DecodeString(encoded)
+		if err == nil {
+			return out, nil
+		}
+		lastErr = err
+	}
+
+	return nil, lastErr
 }
